@@ -14,7 +14,7 @@ type cmdElement struct {
 type CommandSet struct {
 	mut   sync.Mutex
 	set   map[Command]*list.Element
-	order list.List
+	order list.List // 实际上只需要一个set就够了，但是为了实现指令执行的FIFO，这里用了list保证次序。
 }
 
 func NewCommandSet() *CommandSet {
@@ -114,7 +114,7 @@ func (s *CommandSet) TrimToLen(length int) {
 	}
 }
 
-// IsProposed will return true if the given command is marked as proposed
+// IsProposed will return true if the given command is marked as proposed。proposed的不一定已经commit了，所以可能还会有点不安全。
 func (s *CommandSet) IsProposed(cmd Command) bool {
 	s.mut.Lock()
 	defer s.mut.Unlock()

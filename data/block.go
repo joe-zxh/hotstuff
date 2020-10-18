@@ -137,7 +137,7 @@ func (s *MapStorage) GarbageCollectBlocks(currentVeiwHeigth int) {
 	deleteAncestors = func(block *Block) {
 		parent, ok := s.blocks[block.ParentHash]
 		if ok {
-			deleteAncestors(parent)
+			deleteAncestors(parent) // todo: 这里没有必要用递归吧，降低了性能
 		}
 		delete(s.blocks, block.Hash())
 	}
