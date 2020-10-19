@@ -337,7 +337,7 @@ func (srv *hotstuffServer) Start(address string) error {
 		return err
 	}
 
-	err = srv.hs.Start()
+	err = srv.hs.Start() // 这里是hs的入口
 	if err != nil {
 		return err
 	}

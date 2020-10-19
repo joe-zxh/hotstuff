@@ -83,6 +83,7 @@ func (hs *HotStuff) Start() error {
 	return nil
 }
 
+// 作为rpc的client端，调用其他hsserver的rpc。
 func (hs *HotStuff) startClient(connectTimeout time.Duration) error {
 	idMapping := make(map[string]uint32, len(hs.Config.Replicas)-1)
 	for _, replica := range hs.Config.Replicas {
@@ -185,7 +186,7 @@ func (hs *HotStuff) Propose() {
 	protobuf := proto.BlockToProto(proposal)
 	hs.cfg.Propose(protobuf)
 	// self-vote
-	hs.handlePropose(proposal)
+	hs.handlePropose(proposal) // todo: 这个broadcast不会发给自己的吗？？？为什么又要handle一次。
 }
 
 // SendNewView sends a NEW-VIEW message to a specific replica

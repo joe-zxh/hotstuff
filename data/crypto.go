@@ -168,7 +168,7 @@ func (qc *QuorumCert) AddPartial(cert *PartialCert) error {
 		return fmt.Errorf("Attempt to add partial cert from same replica twice")
 	}
 
-	if !bytes.Equal(qc.BlockHash[:], cert.BlockHash[:]) {
+	if !bytes.Equal(qc.BlockHash[:], cert.BlockHash[:]) { // todo: 实验的时候，这个比较耗时也可以去掉
 		return fmt.Errorf("Partial cert hash does not match quorum cert")
 	}
 
@@ -188,7 +188,7 @@ func CreatePartialCert(id config.ReplicaID, privKey *ecdsa.PrivateKey, block *Bl
 	return &PartialCert{sig, hash}, nil
 }
 
-// VerifyPartialCert will verify a PartialCert from a public key stored in ReplicaConfig
+// VerifyPartialCert will verify a PartialCert from a public key stored in ReplicaConfig。弃用：使用SignatureCache.VerifySignature替代
 func VerifyPartialCert(conf *config.ReplicaConfig, cert *PartialCert) bool {
 	info, ok := conf.Replicas[cert.Sig.ID]
 	if !ok {
@@ -203,7 +203,7 @@ func CreateQuorumCert(block *Block) *QuorumCert {
 	return &QuorumCert{BlockHash: block.Hash(), Sigs: make(map[config.ReplicaID]PartialSig)}
 }
 
-// VerifyQuorumCert will verify a QuorumCert from public keys stored in ReplicaConfig
+// VerifyQuorumCert will verify a QuorumCert from public keys stored in ReplicaConfig。弃用：使用SignatureCache.VerifyQuorumCert替代
 func VerifyQuorumCert(conf *config.ReplicaConfig, qc *QuorumCert) bool {
 	if len(qc.Sigs) < conf.QuorumSize {
 		return false

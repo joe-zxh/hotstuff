@@ -50,13 +50,13 @@ type HotStuffCore struct {
 	// protocol data
 	vHeight    int
 	genesis    *data.Block
-	bLock      *data.Block
-	bExec      *data.Block
-	bLeaf      *data.Block
+	bLock      *data.Block // 已经precommit的block
+	bExec      *data.Block // 已经commit的block
+	bLeaf      *data.Block // 叶节点对应的block
 	qcHigh     *data.QuorumCert
 	pendingQCs map[data.BlockHash]*data.QuorumCert
 
-	waitProposal *sync.Cond
+	waitProposal *sync.Cond // 这里的条件变量可以借鉴一下
 
 	pendingUpdates chan *data.Block
 
@@ -372,7 +372,7 @@ func (hs *HotStuffCore) commit(block *data.Block) {
 	// only called from within update. Thus covered by its mutex lock.
 	if hs.bExec.Height < block.Height {
 		if parent, ok := hs.Blocks.ParentOf(block); ok {
-			hs.commit(parent)
+			hs.commit(parent) // todo: 递归改循环
 		}
 		block.Committed = true
 		logger.Println("EXEC", block)
