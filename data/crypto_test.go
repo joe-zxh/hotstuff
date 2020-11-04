@@ -2,7 +2,9 @@ package data
 
 import (
 	"crypto/ecdsa"
+	"log"
 	"testing"
+	"time"
 
 	"github.com/relab/hotstuff/config"
 )
@@ -73,6 +75,28 @@ func TestVerifyPartialCert(t *testing.T) {
 	if !VerifyPartialCert(simpleRc, pc) {
 		t.Errorf("Partial cert failed to verify!")
 	}
+}
+
+// 测试公私钥加密的时间
+func TestSigAndVerifyTime(t *testing.T) {
+
+	count := 1000
+	var pc *PartialCert
+
+	t1 := time.Now().Nanosecond()
+	for i := 0; i < count; i++ {
+		pc = createPartialCert(t, 0)
+	}
+	t2 := time.Now().Nanosecond()
+	for i := 0; i < count; i++ {
+		if !VerifyPartialCert(simpleRc, pc) {
+			t.Errorf("Partial cert failed to verify!")
+		}
+	}
+	t3 := time.Now().Nanosecond()
+	log.Printf("加密时间为:%vms", (float64(t2-t1))/float64(count*1000000))
+	log.Printf("解密时间为:%vms", (float64(t3-t2))/float64(count*1000000))
+
 }
 
 func createQuorumCert(t *testing.T) *QuorumCert {
