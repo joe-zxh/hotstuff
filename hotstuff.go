@@ -184,9 +184,9 @@ func (hs *HotStuff) Propose() {
 	proposal := hs.CreateProposal()
 	logger.Printf("Propose (%d commands): %s\n", len(proposal.Commands), proposal)
 	protobuf := proto.BlockToProto(proposal)
-	hs.cfg.Propose(protobuf)
+	hs.cfg.Propose(protobuf) // 通过gorums的cfg进行multicast，multicast应该是 不会发送消息给自己的。
 	// self-vote
-	hs.handlePropose(proposal) // todo: 这个broadcast不会发给自己的吗？？？为什么又要handle一次。
+	hs.handlePropose(proposal)
 }
 
 // SendNewView sends a NEW-VIEW message to a specific replica

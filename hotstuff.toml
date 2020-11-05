@@ -1,13 +1,13 @@
-pacemaker = "fixed"
+pacemaker = "round-robin"
 leader-id = 1
-view-change = 1
+view-change = 1 # round-robin模式下面，多久换一次leader
 leader-schedule = [1, 2, 3, 4]
 
 # This is the information that each replica is given about the other replicas
 [[replicas]]
 id = 1
-peer-address = "127.0.0.1:13371"
-client-address = "127.0.0.1:23371"
+peer-address = "125.216.243.208:13371"
+client-address = "125.216.243.208:23371"
 pubkey = "keys/r1.key.pub"
 cert = "keys/r1.crt"
 

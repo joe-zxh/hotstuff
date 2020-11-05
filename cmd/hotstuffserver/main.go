@@ -39,7 +39,7 @@ type options struct {
 	PmType          string             `mapstructure:"pacemaker"`
 	LeaderID        config.ReplicaID   `mapstructure:"leader-id"`
 	Schedule        []config.ReplicaID `mapstructure:"leader-schedule"`
-	ViewChange      int                `mapstructure:"view-change"`
+	ViewChange      int                `mapstructure:"view-change"` // 多少次共识之后，换一次leader
 	ViewTimeout     int                `mapstructure:"view-timeout"`
 	BatchSize       int                `mapstructure:"batch-size"`
 	PrintThroughput bool               `mapstructure:"print-throughput"`
@@ -166,6 +166,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to unmarshal config: %v\n", err)
 		os.Exit(1)
 	}
+
+	log.Printf("replica %d starts", conf.SelfID)
 
 	privkey, err := data.ReadPrivateKeyFile(conf.Privkey)
 	if err != nil {

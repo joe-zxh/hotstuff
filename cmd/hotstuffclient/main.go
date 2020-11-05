@@ -70,7 +70,7 @@ func main() {
 	pflag.Int("rate-limit", 0, "Limit the request-rate to approximately (in requests per second).")
 	pflag.Int("payload-size", 0, "The size of the payload in bytes")
 	pflag.Uint64("max-inflight", 10000, "The maximum number of messages that the client can wait for at once") // 用来控制客戶端的个数的
-	pflag.String("input", "", "Optional file to use for payload data") // client请求的负载
+	pflag.String("input", "", "Optional file to use for payload data")                                         // client请求的负载
 	pflag.Bool("benchmark", false, "If enabled, a BenchmarkData protobuf will be written to stdout.")
 	pflag.Int("exit-after", 0, "Number of seconds after which the program should exit.")
 	pflag.Bool("tls", false, "Enable TLS")
@@ -140,6 +140,8 @@ func main() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 
+	log.Println(`client start...`)
+
 	go func() {
 		if conf.ExitAfter > 0 {
 			select {
@@ -205,7 +207,7 @@ type qspec struct {
 }
 
 func (q *qspec) ExecCommandQF(_ *client.Command, signatures map[uint32]*client.Empty) (*client.Empty, bool) {
-	if len(signatures) < q.faulty+1 {
+	if len(signatures) < q.faulty+1 { // 对于SBFT来说，这里设为1即可，还是按照gorum的写法即可。
 		return nil, false
 	}
 	return &client.Empty{}, true
@@ -293,7 +295,7 @@ func (c *hotstuffClient) SendCommands(ctx context.Context) error {
 	for {
 		if atomic.LoadUint64(&c.inflight) < c.conf.MaxInflight {
 			atomic.AddUint64(&c.inflight, 1)
-			data := make([]byte, c.conf.PayloadSize)
+			data := make([]byte, c.conf.PayloadSize) // 其实用固定的数据也可以，不用每次都生成一遍。
 			n, err := c.reader.Read(data)
 			if err != nil {
 				return err

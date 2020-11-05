@@ -210,7 +210,7 @@ func VerifyQuorumCert(conf *config.ReplicaConfig, qc *QuorumCert) bool {
 	}
 	var wg sync.WaitGroup
 	var numVerified uint64 = 0
-	for _, psig := range qc.Sigs {
+	for _, psig := range qc.Sigs { // todo: 实验的时候，直接验证一个即可，就不用开很多个goroutine了。
 		info, ok := conf.Replicas[psig.ID]
 		if !ok {
 			logger.Printf("VerifyQuorumSig: got signature from replica whose ID (%d) was not in config.", psig.ID)

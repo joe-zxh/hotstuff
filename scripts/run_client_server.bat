@@ -24,7 +24,7 @@ set clientProcName=hotstuffclient.exe
 set beg=1
 set /a end=%servernum%
 
-set tls=false
+set tls=true
 
 ::启动服务端
 for /l %%i in (%beg%,1,%end%) do (

@@ -272,7 +272,7 @@ func (hs *HotStuffCore) OnReceiveVote(cert *data.PartialCert) {
 			return
 		}
 		if b.Height <= hs.bLeaf.Height {
-			// too old, don't care
+			// too old, don't care。已经 这个block已经有qc了
 			return
 		}
 		// need to check again in case a qc was created while we waited for the block
