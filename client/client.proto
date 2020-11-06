@@ -24,6 +24,7 @@ service Client {
 message Command {
   uint32 ClientID = 1;
   uint64 SequenceNumber = 2;
+  uint32
   bytes Data = 3;
 }
 

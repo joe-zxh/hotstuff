@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"io/ioutil"
 	"log"
 	"net"
@@ -26,9 +28,7 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -246,6 +246,7 @@ func main() {
 
 		replicaConfig.Replicas[r.ID] = info
 	}
+	replicaConfig.ClusterSize = len(replicaConfig.Replicas)
 	replicaConfig.QuorumSize = len(replicaConfig.Replicas) - (len(replicaConfig.Replicas)-1)/3
 
 	srv := newHotStuffServer(&conf, replicaConfig)
@@ -370,7 +371,8 @@ func (srv *hotstuffServer) ExecCommand(_ context.Context, cmd *client.Command, o
 		log.Fatalf("Failed to marshal command: %v", err)
 		out(nil, status.Errorf(codes.InvalidArgument, "Failed to marshal command: %v", err))
 	}
-	srv.hs.AddCommand(data.Command(b))
+	srv.hs.AddCommand(data.Command(b)) // 对于hotstuff来说，如果节点个数很多的时候，时延可能很久(因为要轮到那个节点当leader的时候才有机会被提交)，所以客户端的请求还是必须发送给所有节点。
+	// 不然不好控制客户端的个数。
 
 	go func(id cmdID, finished chan struct{}) {
 		<-finished

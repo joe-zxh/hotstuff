@@ -18,13 +18,14 @@ type ReplicaInfo struct {
 
 // ReplicaConfig holds information needed by a replica
 type ReplicaConfig struct {
-	ID         ReplicaID
-	PrivateKey *ecdsa.PrivateKey
-	Cert       *tls.Certificate // Own certificate
-	CertPool   *x509.CertPool   // Other replicas's certificates
-	Replicas   map[ReplicaID]*ReplicaInfo
-	QuorumSize int
-	BatchSize  int
+	ID          ReplicaID
+	PrivateKey  *ecdsa.PrivateKey
+	Cert        *tls.Certificate // Own certificate
+	CertPool    *x509.CertPool   // Other replicas's certificates
+	Replicas    map[ReplicaID]*ReplicaInfo
+	QuorumSize  int
+	ClusterSize int
+	BatchSize   int
 }
 
 // NewConfig returns a new ReplicaConfig instance

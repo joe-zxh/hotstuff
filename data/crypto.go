@@ -85,19 +85,26 @@ func (s *SignatureCache) VerifyQuorumCert(qc *QuorumCert) bool {
 	if len(qc.Sigs) < s.conf.QuorumSize {
 		return false
 	}
-	var wg sync.WaitGroup
-	var numVerified uint64 = 0
-	for _, psig := range qc.Sigs {
-		wg.Add(1)
-		go func(psig PartialSig) {
-			if s.VerifySignature(psig, qc.BlockHash) {
-				atomic.AddUint64(&numVerified, 1)
-			}
-			wg.Done()
-		}(psig)
+	//****
+	for _, psig := range qc.Sigs { // 因为需要深度拷贝，所以用range的方式来做，只检查第一个即可。
+		return s.VerifySignature(psig, qc.BlockHash)
 	}
-	wg.Wait()
-	return numVerified >= uint64(s.conf.QuorumSize)
+	return true
+	//****
+
+	//var wg sync.WaitGroup
+	//var numVerified uint64 = 0
+	//for _, psig := range qc.Sigs {
+	//	wg.Add(1)
+	//	go func(psig PartialSig) { // 实验的时候，模拟即可，开多个gorourine的时间≈一次验证的时间。当节点数很多的时候，goroutine数量太多了，容易打满CPU，所以需要用这个进行模拟。
+	//		if s.VerifySignature(psig, qc.BlockHash) {
+	//			atomic.AddUint64(&numVerified, 1)
+	//		}
+	//		wg.Done()
+	//	}(psig)
+	//}
+	//wg.Wait()
+	//return numVerified >= uint64(s.conf.QuorumSize)
 }
 
 // EvictOld reduces the size of the cache by removing the oldest cached results
@@ -210,7 +217,7 @@ func VerifyQuorumCert(conf *config.ReplicaConfig, qc *QuorumCert) bool {
 	}
 	var wg sync.WaitGroup
 	var numVerified uint64 = 0
-	for _, psig := range qc.Sigs { // todo: 实验的时候，直接验证一个即可，就不用开很多个goroutine了。
+	for _, psig := range qc.Sigs {
 		info, ok := conf.Replicas[psig.ID]
 		if !ok {
 			logger.Printf("VerifyQuorumSig: got signature from replica whose ID (%d) was not in config.", psig.ID)
