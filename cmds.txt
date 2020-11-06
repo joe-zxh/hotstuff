@@ -1,6 +1,7 @@
 
 生成公私钥
-.\hotstuffkeygen.exe -p 'r*' -n 4 --hosts "125.216.243.208,127.0.0.1,127.0.0.1,127.0.0.1" --tls keys
+.\hotstuffkeygen.exe -p r* -n 4 --hosts "125.216.243.208,127.0.0.1,127.0.0.1,127.0.0.1" --tls keys
+.\hotstuffkeygen.exe -p r* -n 4 --hosts 127.0.0.1 --tls keys
 
 生成pb.go和gorum.go：
 protoc `
