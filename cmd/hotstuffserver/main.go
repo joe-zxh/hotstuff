@@ -9,6 +9,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime"
@@ -68,6 +70,7 @@ func usage() {
 }
 
 func main() {
+
 	pflag.Usage = usage
 
 	signals := make(chan os.Signal, 1)
@@ -168,6 +171,13 @@ func main() {
 	}
 
 	log.Printf("replica %d starts", conf.SelfID)
+
+	if conf.SelfID == 1 {
+		go func() {
+			err := http.ListenAndServe("127.0.0.1:6060", nil)
+			fmt.Printf("start http listen: %v\n", err)
+		}()
+	}
 
 	privkey, err := data.ReadPrivateKeyFile(conf.Privkey)
 	if err != nil {
@@ -293,6 +303,7 @@ type hotstuffServer struct {
 	finishedCmds map[cmdID]chan struct{}
 
 	lastExecTime int64
+	pldatas      map[int32]([]byte)
 }
 
 func newHotStuffServer(conf *options, replicaConfig *config.ReplicaConfig) *hotstuffServer {
@@ -314,7 +325,9 @@ func newHotStuffServer(conf *options, replicaConfig *config.ReplicaConfig) *hots
 		gorumsSrv:    client.NewGorumsServer(serverOpts...),
 		finishedCmds: make(map[cmdID]chan struct{}),
 		lastExecTime: time.Now().UnixNano(),
+		pldatas:      make(map[int32]([]byte)),
 	}
+	srv.initPayloadData()
 	var pm hotstuff.Pacemaker
 	switch conf.PmType {
 	case "fixed":
@@ -332,6 +345,36 @@ func newHotStuffServer(conf *options, replicaConfig *config.ReplicaConfig) *hots
 	// Use a custom server instead of the gorums one
 	srv.gorumsSrv.RegisterClientServer(srv)
 	return srv
+}
+
+func (srv *hotstuffServer) initPayloadData() { // 初始化一些常用的负载的大小
+	srv.pldatas[0] = []byte(``)
+
+	var endSize int32 = 4096
+	var size int32 = 1
+	var strData = `a`
+
+	for {
+		if size > endSize {
+			break
+		}
+		srv.pldatas[size] = []byte(strData)
+		size *= 2
+		strData = strData + strData
+	}
+}
+
+func (srv *hotstuffServer) getPayloadData(size int32) []byte {
+	if data, ok := srv.pldatas[size]; ok {
+		return data
+	}
+	var strData = ``
+	var i int32 = 0
+	for ; i < size; i++ {
+		strData = strData + `a`
+	}
+	srv.pldatas[size] = []byte(strData)
+	return srv.pldatas[size]
 }
 
 func (srv *hotstuffServer) Start(address string) error {
@@ -364,8 +407,9 @@ func (srv *hotstuffServer) ExecCommand(_ context.Context, cmd *client.Command, o
 	srv.mut.Lock()
 	srv.finishedCmds[id] = finished
 	srv.mut.Unlock()
-	// marshal the message back to a byte so that HotStuff can process it.
-	// TODO: think of a better way to do this.
+
+	cmd.Data = srv.getPayloadData(cmd.PayloadSize)
+
 	b, err := proto.MarshalOptions{Deterministic: true}.Marshal(cmd)
 	if err != nil {
 		log.Fatalf("Failed to marshal command: %v", err)

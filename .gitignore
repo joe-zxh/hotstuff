@@ -1,5 +1,6 @@
 # profile
-profile/
+profileCPU/
+profileMem/
 
 # Binaries for programs and plugins
 *.exe

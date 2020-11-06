@@ -295,15 +295,16 @@ func (c *hotstuffClient) SendCommands(ctx context.Context) error {
 	for {
 		if atomic.LoadUint64(&c.inflight) < c.conf.MaxInflight {
 			atomic.AddUint64(&c.inflight, 1)
-			data := make([]byte, c.conf.PayloadSize) // 其实用固定的数据也可以，不用每次都生成一遍。
-			n, err := c.reader.Read(data)
-			if err != nil {
-				return err
-			}
+			//data := make([]byte, c.conf.PayloadSize) // 其实用固定的数据也可以，不用每次都生成一遍。
+			//n, err := c.reader.Read(data)
+			//if err != nil {
+			//	return err
+			//}
 			cmd := &client.Command{
 				ClientID:       uint32(c.conf.SelfID),
 				SequenceNumber: num,
-				Data:           data[:n],
+				PayloadSize:    int32(c.conf.PayloadSize),
+				// Data:           data[:n],
 			}
 			now := time.Now()
 			promise := c.gorumsConfig.ExecCommand(ctx, cmd)

@@ -24,8 +24,8 @@ service Client {
 message Command {
   uint32 ClientID = 1;
   uint64 SequenceNumber = 2;
-  uint32
-  bytes Data = 3;
+  int32 PayloadSize = 3;
+  bytes Data = 4; // client发送的请求不包含data，仅由server根据payloadsize来产生。
 }
 
 message Empty {}
