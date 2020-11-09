@@ -1,7 +1,7 @@
 package data
 
 import (
-	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -23,7 +23,7 @@ type BlockStorage interface {
 }
 
 // BlockHash represents a SHA256 hashsum of a Block
-type BlockHash [32]byte
+type BlockHash [64]byte
 
 func (h BlockHash) String() string {
 	return hex.EncodeToString(h[:])
@@ -52,24 +52,24 @@ func (n Block) Hash() BlockHash {
 		return *n.hash
 	}
 
-	s256 := sha256.New()
+	s512 := sha512.New()
 
-	s256.Write(n.ParentHash[:])
+	s512.Write(n.ParentHash[:])
 
 	height := make([]byte, 8)
 	binary.LittleEndian.PutUint64(height, uint64(n.Height))
-	s256.Write(height[:])
+	s512.Write(height[:])
 
 	if n.Justify != nil {
-		s256.Write(n.Justify.ToBytes())
+		s512.Write(n.Justify.ToBytes())
 	}
 
 	for _, cmd := range n.Commands {
-		s256.Write([]byte(cmd))
+		s512.Write([]byte(cmd))
 	}
 
 	n.hash = new(BlockHash)
-	sum := s256.Sum(nil)
+	sum := s512.Sum(nil)
 	copy(n.hash[:], sum)
 
 	return *n.hash

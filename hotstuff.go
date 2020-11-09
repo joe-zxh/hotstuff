@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/rand"
-	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
@@ -100,7 +100,7 @@ func (hs *HotStuff) startClient(connectTimeout time.Duration) error {
 	perNodeMD := func(nid uint32) metadata.MD {
 		var b [4]byte
 		binary.LittleEndian.PutUint32(b[:], nid)
-		hash := sha256.Sum256(b[:])
+		hash := sha512.Sum512(b[:])
 		R, S, err := ecdsa.Sign(rand.Reader, hs.Config.PrivateKey, hash[:])
 		if err != nil {
 			panic(fmt.Errorf("Could not sign proof for replica %d: %w", nid, err))
@@ -286,7 +286,7 @@ func (hs *hotstuffServer) getClientID(ctx context.Context) (config.ReplicaID, er
 
 	var b [4]byte
 	binary.LittleEndian.PutUint32(b[:], uint32(hs.Config.ID))
-	hash := sha256.Sum256(b[:])
+	hash := sha512.Sum512(b[:])
 
 	if !ecdsa.Verify(info.PubKey, hash[:], &R, &S) {
 		return 0, fmt.Errorf("Invalid proof")
