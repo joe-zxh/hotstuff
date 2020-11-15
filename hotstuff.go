@@ -211,6 +211,7 @@ func (hs *HotStuff) handlePropose(block *data.Block) {
 	}
 }
 
+// 这个hotstuffServer是面向 集群内部的，也就是面向hotstuffServer。
 type hotstuffServer struct {
 	*HotStuff
 	*proto.GorumsServer
@@ -236,6 +237,7 @@ func (hs *hotstuffServer) getClientID(ctx context.Context) (config.ReplicaID, er
 		return id, nil
 	}
 
+	// 后面的部分是用来建立第一次通讯 验证用的。
 	hs.mut.RUnlock()
 	hs.mut.Lock()
 	defer hs.mut.Unlock()

@@ -289,6 +289,7 @@ type cmdID struct {
 	sequenceNum uint64
 }
 
+// 这个hotstuffServer是面向 客hotstuffClient的。
 type hotstuffServer struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
