@@ -25,7 +25,7 @@ set tls=true
 
 ::启动服务端
 for /l %%i in (%beg%,1,%end%) do (
-start cmd /k "cd/d %home% && %serverProcName% --tls=%tls% --self-id %%i --privkey %home%/keys/r%%i.key --view-change 1"
+start cmd /k "cd/d %home% && %serverProcName% --tls=%tls% --self-id %%i --privkey %home%/keys/r%%i.key --view-change 1 --batch-size 100 --view-timeout 10000"
 )
 
 :: --memprofile %home%/profileMem/mem%%i.prof
