@@ -148,14 +148,22 @@ func New(conf *config.ReplicaConfig) *HotStuffCore {
 	return hs
 }
 
-// expectBlock looks for a block with the given Hash, or waits for the next proposal to arrive
+// expectBlock waits for a block with the given Hash
 // hs.mut must be locked when calling this function
 func (hs *HotStuffCore) expectBlock(hash data.BlockHash) (*data.Block, bool) {
-	if block, ok := hs.Blocks.Get(hash); ok {
-		return block, true
+	count := 0
+	for {
+		if block, ok := hs.Blocks.Get(hash); ok {
+			return block, true
+		} else {
+			count++
+			hs.waitProposal.Wait()
+		}
+		if count == 10 {
+			log.Printf("warning: waiting for block(%.8s) over 10 times...\n", hash)
+			count = 0
+		}
 	}
-	hs.waitProposal.Wait()
-	return hs.Blocks.Get(hash)
 }
 
 func (hs *HotStuffCore) emitEvent(event Event) {
