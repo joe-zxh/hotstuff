@@ -83,7 +83,7 @@ func main() {
 	fullprofile := pflag.String("fullprofile", "", "File to write fgprof profile to")
 	traceFile := pflag.String("trace", "", "File to write execution trace to")
 	pflag.Uint32("self-id", 0, "The id for this replica.")
-	pflag.Int("view-change", 100, "How many views before leader change with round-robin pacemaker") // 这个需要有点注意，难道不是每次都换leader？
+	pflag.Int("view-change", 1, "How many views before leader change with round-robin pacemaker") // 这个需要有点注意，难道不是每次都换leader？
 	pflag.Int("batch-size", 100, "How many commands are batched together for each proposal")
 	pflag.Int("view-timeout", 1000, "How many milliseconds before a view is timed out")
 	pflag.String("privkey", "", "The path to the private key file")

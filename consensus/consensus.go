@@ -213,7 +213,7 @@ func (hs *HotStuffCore) OnReceiveProposal(block *data.Block) (*data.PartialCert,
 
 	if block.Height <= hs.vHeight {
 		hs.mut.Unlock()
-		log.Println("OnReceiveProposal: Block height less than vHeight")
+		log.Printf("OnReceiveProposal: Block height(%d) less than vHeight(%d)\n", block.Height, hs.vHeight)
 		return nil, fmt.Errorf("Block was not accepted")
 	}
 
@@ -282,7 +282,7 @@ func (hs *HotStuffCore) OnReceiveVote(cert *data.PartialCert) {
 		}
 		if b.Height <= hs.bLeaf.Height {
 			// too old, don't care。已经 这个block已经有qc了
-			log.Println("too old block", b)
+			// log.Println("too old block", b)
 			return
 		}
 		// need to check again in case a qc was created while we waited for the block
