@@ -41,8 +41,8 @@ type Block struct {
 }
 
 func (n Block) String() string {
-	return fmt.Sprintf("Block{Parent: %.8s, Justify: %s, Height: %d, Committed: %v}",
-		n.ParentHash, n.Justify, n.Height, n.Committed)
+	return fmt.Sprintf("Block{Parent: %.8s, Hash: %.8s, Height: %d, Committed: %v}",
+		n.ParentHash, n.Hash(), n.Height, n.Committed)
 }
 
 // Hash returns a hash digest of the block.

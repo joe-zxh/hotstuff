@@ -205,7 +205,7 @@ func (hs *HotStuffCore) OnReceiveProposal(block *data.Block) (*data.PartialCert,
 
 	if block.Height <= hs.vHeight {
 		hs.mut.Unlock()
-		logger.Println("OnReceiveProposal: Block height less than vHeight")
+		log.Println("OnReceiveProposal: Block height less than vHeight")
 		return nil, fmt.Errorf("Block was not accepted")
 	}
 
@@ -213,7 +213,7 @@ func (hs *HotStuffCore) OnReceiveProposal(block *data.Block) (*data.PartialCert,
 	if nExists && qcBlock.Height > hs.bLock.Height {
 		safe = true
 	} else {
-		logger.Println("OnReceiveProposal: liveness condition failed")
+		log.Println("OnReceiveProposal: liveness condition failed")
 		// check if block extends bLock
 		b := block
 		ok := true
@@ -223,13 +223,13 @@ func (hs *HotStuffCore) OnReceiveProposal(block *data.Block) (*data.PartialCert,
 		if ok && b.ParentHash == hs.bLock.Hash() {
 			safe = true
 		} else {
-			logger.Println("OnReceiveProposal: safety condition failed")
+			log.Println("OnReceiveProposal: safety condition failed")
 		}
 	}
 
 	if !safe {
 		hs.mut.Unlock()
-		logger.Println("OnReceiveProposal: Block not safe")
+		log.Println("OnReceiveProposal: Block not safe")
 		return nil, fmt.Errorf("Block was not accepted")
 	}
 
@@ -246,6 +246,7 @@ func (hs *HotStuffCore) OnReceiveProposal(block *data.Block) (*data.PartialCert,
 
 	pc, err := hs.SigCache.CreatePartialCert(hs.Config.ID, hs.Config.PrivateKey, block)
 	if err != nil {
+		panic(err)
 		return nil, err
 	}
 	return pc, nil
@@ -268,11 +269,12 @@ func (hs *HotStuffCore) OnReceiveVote(cert *data.PartialCert) {
 	if !ok {
 		b, ok := hs.expectBlock(cert.BlockHash)
 		if !ok {
-			logger.Println("OnReceiveVote: could not find block for certificate.")
+			log.Println("OnReceiveVote: could not find block for certificate.")
 			return
 		}
 		if b.Height <= hs.bLeaf.Height {
 			// too old, don't care。已经 这个block已经有qc了
+			log.Println("too old block", b)
 			return
 		}
 		// need to check again in case a qc was created while we waited for the block
@@ -285,6 +287,7 @@ func (hs *HotStuffCore) OnReceiveVote(cert *data.PartialCert) {
 
 	err := qc.AddPartial(cert)
 	if err != nil {
+		panic(err)
 		logger.Println("OnReceiveVote: could not add partial signature to QC:", err)
 	}
 

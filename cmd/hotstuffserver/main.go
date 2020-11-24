@@ -221,6 +221,7 @@ func main() {
 		panic("cluster size too large, you do not have enough replica configuration in the toml file")
 	} else {
 		conf.Replicas = conf.Replicas[:*clusterSize]
+		conf.Schedule = conf.Schedule[:*clusterSize]
 	}
 
 	for _, r := range conf.Replicas {
@@ -272,7 +273,7 @@ func main() {
 	}
 
 	<-signals
-	fmt.Fprintf(os.Stderr, "Exiting...\n")
+	log.Println("Exiting...")
 	srv.Stop()
 
 	if *memprofile != "" {

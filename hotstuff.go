@@ -199,8 +199,8 @@ func (hs *HotStuff) SendNewView(id config.ReplicaID) {
 
 func (hs *HotStuff) handlePropose(block *data.Block) {
 	p, err := hs.OnReceiveProposal(block)
-	if err != nil {
-		logger.Println("OnReceiveProposal returned with error:", err)
+	if err != nil { // todo: hotstuff只要在这个地方返回err，后续就不会再发送Vote RPC了，所以 整个算法就停了...
+		log.Println("OnReceiveProposal returned with error:", err)
 		return
 	}
 	leaderID := hs.pacemaker.GetLeader(block.Height)
