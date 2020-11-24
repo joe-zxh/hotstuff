@@ -182,7 +182,7 @@ func (hs *HotStuff) Propose() {
 	proposal := hs.CreateProposal()
 	logger.Printf("Propose (%d commands): %s\n", len(proposal.Commands), proposal)
 	protobuf := proto.BlockToProto(proposal)
-	hs.cfg.Propose(protobuf) // 通过gorums的cfg进行multicast，multicast应该是 不会发送消息给自己的。
+	hs.cfg.Propose(protobuf) // 通过gorums的multicast不会发送消息给自己的。
 	// self-vote
 	hs.handlePropose(proposal)
 }
@@ -301,28 +301,24 @@ func (hs *hotstuffServer) Propose(ctx context.Context, protoB *proto.Block) {
 	hs.handlePropose(block)
 }
 
-// OnReceiveVote handles an incoming vote from a replica
+// handleVote handles an incoming vote from a replica
 func (hs *HotStuff) handleVote(cert *data.PartialCert) {
 	if !hs.SigCache.VerifySignature(cert.Sig, cert.BlockHash) {
-		log.Println("OnReceiveVote: signature not verified!")
+		log.Println("handleVote: signature not verified!")
 		return
 	}
 
-	logger.Printf("OnReceiveVote: %.8s\n", cert.BlockHash)
+	logger.Printf("handleVote: %.8s\n", cert.BlockHash)
+
+	b := hs.GetBlock(cert.BlockHash)
 
 	hs.Mut.Lock()
-	defer hs.Mut.Unlock()
 
 	qc, ok := hs.PendingQCs[cert.BlockHash]
 	if !ok {
-		b, ok := hs.ExpectBlock(cert.BlockHash)
-		if !ok {
-			log.Println("OnReceiveVote: could not find block for certificate.")
-			return
-		}
 		if b.Height <= hs.BLeaf.Height {
 			// too old, don't care。已经 这个block已经有qc了
-			// log.Println("too old block", b)
+			hs.Mut.Unlock()
 			return
 		}
 		// need to check again in case a qc was created while we waited for the block
@@ -336,26 +332,19 @@ func (hs *HotStuff) handleVote(cert *data.PartialCert) {
 	err := qc.AddPartial(cert)
 	if err != nil {
 		panic(err)
-		logger.Println("OnReceiveVote: could not add partial signature to QC:", err)
+		logger.Println("handleVote: could not add partial signature to QC:", err)
 	}
 
 	if len(qc.Sigs) >= hs.Config.QuorumSize {
 		delete(hs.PendingQCs, cert.BlockHash)
-		logger.Println("OnReceiveVote: Created QC")
+		logger.Printf("handleVote: Created QC: %.8s\n", qc.BlockHash)
 		hs.UpdateQCHigh(qc)
 		go hs.Propose()
 	}
 
-	// delete any pending QCs with lower height than bLeaf
-	for k := range hs.PendingQCs {
-		if b, ok := hs.Blocks.Get(k); ok {
-			if b.Height <= hs.BLeaf.Height {
-				delete(hs.PendingQCs, k)
-			}
-		} else {
-			delete(hs.PendingQCs, k)
-		}
-	}
+	hs.DeletePendings()
+
+	hs.Mut.Unlock()
 }
 
 func (hs *hotstuffServer) Vote(ctx context.Context, cert *proto.PartialCert) {

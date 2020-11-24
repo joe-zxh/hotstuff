@@ -5,8 +5,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"sync"
-
 	"github.com/relab/hotstuff/config"
 )
 
@@ -14,13 +12,13 @@ import (
 type Command string
 
 // BlockStorage provides a means to store a block based on its hash
-type BlockStorage interface {
-	Put(*Block)
-	Get(BlockHash) (*Block, bool)
-	BlockOf(*QuorumCert) (*Block, bool)
-	ParentOf(*Block) (*Block, bool)
-	GarbageCollectBlocks(int)
-}
+//type BlockStorage interface {
+//	Put(*Block)
+//	Get(BlockHash) (*Block, bool)
+//	BlockOf(*QuorumCert) (*Block, bool)
+//	ParentOf(*Block) (*Block, bool)
+//	GarbageCollectBlocks(int)
+//}
 
 // BlockHash represents a SHA256 hashsum of a Block
 type BlockHash [64]byte
@@ -77,8 +75,6 @@ func (n Block) Hash() BlockHash {
 
 // MapStorage is a simple implementation of BlockStorage that uses a concurrent map.
 type MapStorage struct {
-	// TODO: Experiment with RWMutex
-	mut    sync.Mutex
 	blocks map[BlockHash]*Block
 }
 
@@ -91,9 +87,6 @@ func NewMapStorage() *MapStorage {
 
 // Put inserts a block into the map
 func (s *MapStorage) Put(block *Block) {
-	s.mut.Lock()
-	defer s.mut.Unlock()
-
 	hash := block.Hash()
 	if _, ok := s.blocks[hash]; !ok {
 		s.blocks[hash] = block
@@ -102,36 +95,24 @@ func (s *MapStorage) Put(block *Block) {
 
 // Get gets a block from the map based on its hash.
 func (s *MapStorage) Get(hash BlockHash) (block *Block, ok bool) {
-	s.mut.Lock()
-	defer s.mut.Unlock()
-
 	block, ok = s.blocks[hash]
 	return
 }
 
 // BlockOf returns the block associated with the quorum cert
 func (s *MapStorage) BlockOf(qc *QuorumCert) (block *Block, ok bool) {
-	s.mut.Lock()
-	defer s.mut.Unlock()
-
 	block, ok = s.blocks[qc.BlockHash]
 	return
 }
 
 // ParentOf returns the parent of the given Block
 func (s *MapStorage) ParentOf(child *Block) (parent *Block, ok bool) {
-	s.mut.Lock()
-	defer s.mut.Unlock()
-
 	parent, ok = s.blocks[child.ParentHash]
 	return
 }
 
 // GarbageCollectBlocks dereferences old Blocks that are no longer needed
 func (s *MapStorage) GarbageCollectBlocks(currentVeiwHeigth int) {
-	s.mut.Lock()
-	defer s.mut.Unlock()
-
 	var deleteAncestors func(block *Block)
 
 	deleteAncestors = func(block *Block) {

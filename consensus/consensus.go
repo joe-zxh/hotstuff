@@ -1,7 +1,6 @@
 package consensus
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"sync"
@@ -30,10 +29,11 @@ type HotStuffCore struct {
 	Mut sync.Mutex
 
 	// Contains the commands that are waiting to be proposed
-	cmdCache *data.CommandSet
-	Config   *config.ReplicaConfig
-	Blocks   data.BlockStorage
-	SigCache *data.SignatureCache
+	cmdCache  *data.CommandSet
+	Config    *config.ReplicaConfig
+	Blocks    *data.MapStorage
+	BlocksMut sync.Mutex
+	SigCache  *data.SignatureCache
 
 	// protocol data
 	vHeight    int
@@ -45,11 +45,6 @@ type HotStuffCore struct {
 	PendingQCs map[data.BlockHash]*data.QuorumCert
 
 	waitProposal *sync.Cond // 这里的条件变量可以借鉴一下
-
-	pendingUpdates chan *data.Block
-
-	// stops any goroutines started by HotStuff
-	cancel context.CancelFunc
 
 	exec chan []data.Command
 }
@@ -101,49 +96,28 @@ func New(conf *config.ReplicaConfig) *HotStuffCore {
 	}
 	qcForGenesis := data.CreateQuorumCert(genesis)
 	blocks := data.NewMapStorage()
-	blocks.Put(genesis)
-
-	ctx, cancel := context.WithCancel(context.Background())
 
 	hs := &HotStuffCore{
-		Config:         conf,
-		genesis:        genesis,
-		bLock:          genesis,
-		bExec:          genesis,
-		BLeaf:          genesis,
-		qcHigh:         qcForGenesis,
-		Blocks:         blocks,
-		PendingQCs:     make(map[data.BlockHash]*data.QuorumCert),
-		cancel:         cancel,
-		SigCache:       data.NewSignatureCache(conf),
-		cmdCache:       data.NewCommandSet(),
-		pendingUpdates: make(chan *data.Block, 1),
-		exec:           make(chan []data.Command, 1),
+		Config:     conf,
+		genesis:    genesis,
+		bLock:      genesis,
+		bExec:      genesis,
+		BLeaf:      genesis,
+		qcHigh:     qcForGenesis,
+		Blocks:     blocks,
+		PendingQCs: make(map[data.BlockHash]*data.QuorumCert),
+		SigCache:   data.NewSignatureCache(conf),
+		cmdCache:   data.NewCommandSet(),
+		exec:       make(chan []data.Command, 1),
 	}
 
-	hs.waitProposal = sync.NewCond(&hs.Mut)
+	hs.waitProposal = sync.NewCond(&hs.BlocksMut)
 
-	go hs.updateAsync(ctx)
+	hs.BlocksMut.Lock()
+	hs.Blocks.Put(genesis)
+	hs.BlocksMut.Unlock()
 
 	return hs
-}
-
-// expectBlock waits for a block with the given Hash
-// hs.mut must be locked when calling this function
-func (hs *HotStuffCore) ExpectBlock(hash data.BlockHash) (*data.Block, bool) {
-	count := 0
-	for {
-		if block, ok := hs.Blocks.Get(hash); ok {
-			return block, true
-		} else {
-			count++
-			hs.waitProposal.Wait()
-		}
-		if count == 10 {
-			log.Printf("warning: waiting for block(%.8s) over 10 times...\n", hash)
-			count = 0
-		}
-	}
 }
 
 // UpdateQCHigh updates the qc held by the paceMaker, to the newest qc.
@@ -155,20 +129,15 @@ func (hs *HotStuffCore) UpdateQCHigh(qc *data.QuorumCert) bool {
 
 	logger.Println("UpdateQCHigh")
 
-	newQCHighBlock, ok := hs.ExpectBlock(qc.BlockHash)
-	if !ok {
-		log.Println("Could not find block of new QC!")
-		return false
-	}
+	newQCHighBlock := hs.GetBlock(qc.BlockHash)
 
-	oldQCHighBlock, ok := hs.Blocks.BlockOf(hs.qcHigh)
-	if !ok {
-		panic(fmt.Errorf("Block from the old qcHigh missing from storage"))
-	}
+	oldQCHighBlock := hs.GetBlock(hs.qcHigh.BlockHash)
 
 	if newQCHighBlock.Height > oldQCHighBlock.Height {
+		hs.Mut.Lock()
 		hs.qcHigh = qc
 		hs.BLeaf = newQCHighBlock
+		hs.Mut.Unlock()
 		return true
 	}
 
@@ -179,11 +148,10 @@ func (hs *HotStuffCore) UpdateQCHigh(qc *data.QuorumCert) bool {
 // OnReceiveProposal handles a replica's response to the Proposal from the leader
 func (hs *HotStuffCore) OnReceiveProposal(block *data.Block) (*data.PartialCert, error) {
 	logger.Println("OnReceiveProposal:", block)
-	hs.Blocks.Put(block)
-	hs.waitProposal.Broadcast()
+	hs.PutBlock(block)
 
 	hs.Mut.Lock()
-	qcBlock, nExists := hs.ExpectBlock(block.Justify.BlockHash)
+	qcBlock := hs.GetBlock(block.Justify.BlockHash)
 
 	if block.Height <= hs.vHeight {
 		hs.Mut.Unlock()
@@ -192,17 +160,16 @@ func (hs *HotStuffCore) OnReceiveProposal(block *data.Block) (*data.PartialCert,
 	}
 
 	safe := false
-	if nExists && qcBlock.Height > hs.bLock.Height {
+	if qcBlock.Height > hs.bLock.Height {
 		safe = true
 	} else {
 		logger.Println("OnReceiveProposal: liveness condition failed")
 		// check if block extends bLock
 		b := block
-		ok := true
-		for ok && b.Height > hs.bLock.Height+1 {
-			b, ok = hs.Blocks.Get(b.ParentHash)
+		for b.Height > hs.bLock.Height+1 {
+			b = hs.GetBlock(b.ParentHash)
 		}
-		if ok && b.ParentHash == hs.bLock.Hash() {
+		if b.ParentHash == hs.bLock.Hash() {
 			safe = true
 		} else {
 			log.Println("OnReceiveProposal: safety condition failed")
@@ -215,12 +182,13 @@ func (hs *HotStuffCore) OnReceiveProposal(block *data.Block) (*data.PartialCert,
 		return nil, fmt.Errorf("Block was not accepted")
 	}
 
-	logger.Println("OnReceiveProposal: Accepted block")
+	logger.Printf("OnReceiveProposal: Accepted block, height: %d\n", block.Height)
 	hs.vHeight = block.Height
 	hs.cmdCache.MarkProposed(block.Commands...)
-	hs.Mut.Unlock()
 
-	hs.pendingUpdates <- block
+	hs.update(block)
+
+	hs.Mut.Unlock()
 
 	pc, err := hs.SigCache.CreatePartialCert(hs.Config.ID, hs.Config.PrivateKey, block)
 	if err != nil {
@@ -230,33 +198,19 @@ func (hs *HotStuffCore) OnReceiveProposal(block *data.Block) (*data.PartialCert,
 	return pc, nil
 }
 
-func (hs *HotStuffCore) updateAsync(ctx context.Context) {
-	for {
-		select {
-		case n := <-hs.pendingUpdates:
-			hs.update(n)
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
 func (hs *HotStuffCore) update(block *data.Block) {
 	// block1 = b'', block2 = b', block3 = b
-	block1, ok := hs.Blocks.BlockOf(block.Justify)
-	if !ok || block1.Committed {
+	block1 := hs.GetBlock(block.Justify.BlockHash)
+	if block1.Committed {
 		return
 	}
-
-	hs.Mut.Lock()
-	defer hs.Mut.Unlock()
 
 	logger.Println("PRE COMMIT:", block1)
 	// PRE-COMMIT on block1
 	hs.UpdateQCHigh(block.Justify)
 
-	block2, ok := hs.Blocks.BlockOf(block1.Justify)
-	if !ok || block2.Committed {
+	block2 := hs.GetBlock(block1.Justify.BlockHash)
+	if block2.Committed {
 		return
 	}
 
@@ -265,8 +219,8 @@ func (hs *HotStuffCore) update(block *data.Block) {
 		logger.Println("COMMIT:", block2)
 	}
 
-	block3, ok := hs.Blocks.BlockOf(block2.Justify)
-	if !ok || block3.Committed {
+	block3 := hs.GetBlock(block2.Justify.BlockHash)
+	if block3.Committed {
 		return
 	}
 
@@ -277,7 +231,7 @@ func (hs *HotStuffCore) update(block *data.Block) {
 	}
 
 	// Free up space by deleting old data
-	hs.Blocks.GarbageCollectBlocks(hs.GetVotedHeight())
+	go hs.GCBlocks()
 	hs.cmdCache.TrimToLen(hs.Config.BatchSize * 5)
 	hs.SigCache.EvictOld(hs.Config.QuorumSize * 5)
 }
@@ -285,9 +239,7 @@ func (hs *HotStuffCore) update(block *data.Block) {
 func (hs *HotStuffCore) commit(block *data.Block) {
 	// only called from within update. Thus covered by its mutex lock.
 	if hs.bExec.Height < block.Height {
-		if parent, ok := hs.Blocks.ParentOf(block); ok {
-			hs.commit(parent) // todo: 递归改循环
-		}
+		hs.commit(hs.GetBlock(block.ParentHash)) // todo: 注意genesis
 		block.Committed = true
 		logger.Println("EXEC", block)
 		hs.exec <- block.Commands
@@ -301,13 +253,13 @@ func (hs *HotStuffCore) CreateProposal() *data.Block {
 	b := CreateLeaf(hs.BLeaf, batch, hs.qcHigh, hs.BLeaf.Height+1)
 	hs.Mut.Unlock()
 	b.Proposer = hs.Config.ID
-	hs.Blocks.Put(b)
+	hs.PutBlock(b)
 	return b
 }
 
 // Close frees resources held by HotStuff and closes backend connections
 func (hs *HotStuffCore) Close() {
-	hs.cancel()
+	// hs.cancel()
 }
 
 // CreateLeaf returns a new block that extends the parent.
@@ -317,5 +269,54 @@ func CreateLeaf(parent *data.Block, cmds []data.Command, qc *data.QuorumCert, he
 		Commands:   cmds,
 		Justify:    qc,
 		Height:     height,
+	}
+}
+
+func (hs *HotStuffCore) PutBlock(b *data.Block) {
+	hs.BlocksMut.Lock()
+	defer hs.BlocksMut.Unlock()
+
+	for {
+		if _, ok := hs.Blocks.Get(b.ParentHash); ok { //等到parent到来的時候，才能插入
+			hs.Blocks.Put(b)
+			hs.waitProposal.Broadcast()
+			return
+		} else {
+			hs.waitProposal.Wait()
+		}
+	}
+}
+
+func (hs *HotStuffCore) GetBlock(hash data.BlockHash) *data.Block {
+	hs.BlocksMut.Lock()
+	defer hs.BlocksMut.Unlock()
+
+	for {
+		if block, ok := hs.Blocks.Get(hash); ok {
+			return block
+		} else {
+			hs.waitProposal.Wait()
+		}
+	}
+}
+
+func (hs *HotStuffCore) GCBlocks() {
+	hs.BlocksMut.Lock()
+	defer hs.BlocksMut.Unlock()
+	hs.Blocks.GarbageCollectBlocks(hs.GetVotedHeight())
+}
+
+// delete any pending QCs with lower height than bLeaf
+func (hs *HotStuffCore) DeletePendings() {
+	hs.BlocksMut.Lock()
+	defer hs.BlocksMut.Unlock()
+	for k := range hs.PendingQCs {
+		if b, ok := hs.Blocks.Get(k); ok {
+			if b.Height <= hs.BLeaf.Height {
+				delete(hs.PendingQCs, k)
+			}
+		} /*else { // 不存在的暂时不删吧...
+			delete(hs.PendingQCs, k)
+		}*/
 	}
 }
