@@ -16,10 +16,6 @@ service Hotstuff {
   rpc Vote(PartialCert) returns (google.protobuf.Empty) {
     option (gorums.unicast) = true;
   }
-
-  rpc NewView(QuorumCert) returns (google.protobuf.Empty) {
-    option (gorums.unicast) = true;
-  }
 }
 
 message Block {

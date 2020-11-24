@@ -22,24 +22,12 @@ type EventType uint8
 
 // These are the types of events that can be sent to pacemaker
 const (
-	QCFinish EventType = iota
-	ReceiveProposal
-	ReceiveVote
-	HQCUpdate
-	ReceiveNewView
+	HQCUpdate EventType = iota
 )
-
-// Event is sent to the pacemaker to allow it to observe the protocol.
-type Event struct {
-	Type    EventType
-	QC      *data.QuorumCert
-	Block   *data.Block
-	Replica config.ReplicaID
-}
 
 // HotStuffCore is the safety core of the HotStuffCore protocol
 type HotStuffCore struct {
-	mut sync.Mutex
+	Mut sync.Mutex
 
 	// Contains the commands that are waiting to be proposed
 	cmdCache *data.CommandSet
@@ -52,15 +40,13 @@ type HotStuffCore struct {
 	genesis    *data.Block
 	bLock      *data.Block // 已经precommit的block
 	bExec      *data.Block // 已经commit的block
-	bLeaf      *data.Block // 叶节点对应的block
+	BLeaf      *data.Block // 叶节点对应的block
 	qcHigh     *data.QuorumCert
-	pendingQCs map[data.BlockHash]*data.QuorumCert
+	PendingQCs map[data.BlockHash]*data.QuorumCert
 
 	waitProposal *sync.Cond // 这里的条件变量可以借鉴一下
 
 	pendingUpdates chan *data.Block
-
-	eventChannels []chan Event
 
 	// stops any goroutines started by HotStuff
 	cancel context.CancelFunc
@@ -74,7 +60,7 @@ func (hs *HotStuffCore) AddCommand(command data.Command) {
 
 // GetHeight returns the height of the tree
 func (hs *HotStuffCore) GetHeight() int {
-	return hs.bLeaf.Height
+	return hs.BLeaf.Height
 }
 
 // GetVotedHeight returns the height that was last voted at
@@ -84,29 +70,23 @@ func (hs *HotStuffCore) GetVotedHeight() int {
 
 // GetLeaf returns the current leaf node of the tree
 func (hs *HotStuffCore) GetLeaf() *data.Block {
-	hs.mut.Lock()
-	defer hs.mut.Unlock()
-	return hs.bLeaf
+	hs.Mut.Lock()
+	defer hs.Mut.Unlock()
+	return hs.BLeaf
 }
 
 // SetLeaf sets the leaf node of the tree
 func (hs *HotStuffCore) SetLeaf(block *data.Block) {
-	hs.mut.Lock()
-	defer hs.mut.Unlock()
-	hs.bLeaf = block
+	hs.Mut.Lock()
+	defer hs.Mut.Unlock()
+	hs.BLeaf = block
 }
 
 // GetQCHigh returns the highest valid Quorum Certificate known to the hotstuff instance.
 func (hs *HotStuffCore) GetQCHigh() *data.QuorumCert {
-	hs.mut.Lock()
-	defer hs.mut.Unlock()
+	hs.Mut.Lock()
+	defer hs.Mut.Unlock()
 	return hs.qcHigh
-}
-
-func (hs *HotStuffCore) GetEvents() chan Event {
-	c := make(chan Event)
-	hs.eventChannels = append(hs.eventChannels, c)
-	return c
 }
 
 func (hs *HotStuffCore) GetExec() chan []data.Command {
@@ -130,10 +110,10 @@ func New(conf *config.ReplicaConfig) *HotStuffCore {
 		genesis:        genesis,
 		bLock:          genesis,
 		bExec:          genesis,
-		bLeaf:          genesis,
+		BLeaf:          genesis,
 		qcHigh:         qcForGenesis,
 		Blocks:         blocks,
-		pendingQCs:     make(map[data.BlockHash]*data.QuorumCert),
+		PendingQCs:     make(map[data.BlockHash]*data.QuorumCert),
 		cancel:         cancel,
 		SigCache:       data.NewSignatureCache(conf),
 		cmdCache:       data.NewCommandSet(),
@@ -141,7 +121,7 @@ func New(conf *config.ReplicaConfig) *HotStuffCore {
 		exec:           make(chan []data.Command, 1),
 	}
 
-	hs.waitProposal = sync.NewCond(&hs.mut)
+	hs.waitProposal = sync.NewCond(&hs.Mut)
 
 	go hs.updateAsync(ctx)
 
@@ -150,7 +130,7 @@ func New(conf *config.ReplicaConfig) *HotStuffCore {
 
 // expectBlock waits for a block with the given Hash
 // hs.mut must be locked when calling this function
-func (hs *HotStuffCore) expectBlock(hash data.BlockHash) (*data.Block, bool) {
+func (hs *HotStuffCore) ExpectBlock(hash data.BlockHash) (*data.Block, bool) {
 	count := 0
 	for {
 		if block, ok := hs.Blocks.Get(hash); ok {
@@ -166,12 +146,6 @@ func (hs *HotStuffCore) expectBlock(hash data.BlockHash) (*data.Block, bool) {
 	}
 }
 
-func (hs *HotStuffCore) emitEvent(event Event) {
-	for _, c := range hs.eventChannels {
-		c <- event
-	}
-}
-
 // UpdateQCHigh updates the qc held by the paceMaker, to the newest qc.
 func (hs *HotStuffCore) UpdateQCHigh(qc *data.QuorumCert) bool {
 	if !hs.SigCache.VerifyQuorumCert(qc) {
@@ -181,7 +155,7 @@ func (hs *HotStuffCore) UpdateQCHigh(qc *data.QuorumCert) bool {
 
 	logger.Println("UpdateQCHigh")
 
-	newQCHighBlock, ok := hs.expectBlock(qc.BlockHash)
+	newQCHighBlock, ok := hs.ExpectBlock(qc.BlockHash)
 	if !ok {
 		logger.Println("Could not find block of new QC!")
 		return false
@@ -194,12 +168,11 @@ func (hs *HotStuffCore) UpdateQCHigh(qc *data.QuorumCert) bool {
 
 	if newQCHighBlock.Height > oldQCHighBlock.Height {
 		hs.qcHigh = qc
-		hs.bLeaf = newQCHighBlock
-		hs.emitEvent(Event{Type: HQCUpdate, QC: hs.qcHigh, Block: hs.bLeaf})
+		hs.BLeaf = newQCHighBlock
 		return true
 	}
 
-	logger.Println("UpdateQCHigh Failed")
+	log.Println("UpdateQCHigh Failed")
 	return false
 }
 
@@ -208,11 +181,11 @@ func (hs *HotStuffCore) OnReceiveProposal(block *data.Block) (*data.PartialCert,
 	logger.Println("OnReceiveProposal:", block)
 	hs.Blocks.Put(block)
 
-	hs.mut.Lock()
-	qcBlock, nExists := hs.expectBlock(block.Justify.BlockHash)
+	hs.Mut.Lock()
+	qcBlock, nExists := hs.ExpectBlock(block.Justify.BlockHash)
 
 	if block.Height <= hs.vHeight {
-		hs.mut.Unlock()
+		hs.Mut.Unlock()
 		log.Printf("OnReceiveProposal: Block height(%d) less than vHeight(%d)\n", block.Height, hs.vHeight)
 		return nil, fmt.Errorf("Block was not accepted")
 	}
@@ -221,7 +194,7 @@ func (hs *HotStuffCore) OnReceiveProposal(block *data.Block) (*data.PartialCert,
 	if nExists && qcBlock.Height > hs.bLock.Height {
 		safe = true
 	} else {
-		log.Println("OnReceiveProposal: liveness condition failed")
+		logger.Println("OnReceiveProposal: liveness condition failed")
 		// check if block extends bLock
 		b := block
 		ok := true
@@ -236,7 +209,7 @@ func (hs *HotStuffCore) OnReceiveProposal(block *data.Block) (*data.PartialCert,
 	}
 
 	if !safe {
-		hs.mut.Unlock()
+		hs.Mut.Unlock()
 		log.Println("OnReceiveProposal: Block not safe")
 		return nil, fmt.Errorf("Block was not accepted")
 	}
@@ -244,13 +217,11 @@ func (hs *HotStuffCore) OnReceiveProposal(block *data.Block) (*data.PartialCert,
 	logger.Println("OnReceiveProposal: Accepted block")
 	hs.vHeight = block.Height
 	hs.cmdCache.MarkProposed(block.Commands...)
-	hs.mut.Unlock()
+	hs.Mut.Unlock()
 
 	hs.waitProposal.Broadcast()
-	hs.emitEvent(Event{Type: ReceiveProposal, Block: block, Replica: block.Proposer})
 
-	// queue block for update
-	hs.pendingUpdates <- block
+	go hs.update(block)
 
 	pc, err := hs.SigCache.CreatePartialCert(hs.Config.ID, hs.Config.PrivateKey, block)
 	if err != nil {
@@ -258,73 +229,6 @@ func (hs *HotStuffCore) OnReceiveProposal(block *data.Block) (*data.PartialCert,
 		return nil, err
 	}
 	return pc, nil
-}
-
-// OnReceiveVote handles an incoming vote from a replica
-func (hs *HotStuffCore) OnReceiveVote(cert *data.PartialCert) {
-	if !hs.SigCache.VerifySignature(cert.Sig, cert.BlockHash) {
-		logger.Println("OnReceiveVote: signature not verified!")
-		return
-	}
-
-	logger.Printf("OnReceiveVote: %.8s\n", cert.BlockHash)
-	hs.emitEvent(Event{Type: ReceiveVote, Replica: cert.Sig.ID})
-
-	hs.mut.Lock()
-	defer hs.mut.Unlock()
-
-	qc, ok := hs.pendingQCs[cert.BlockHash]
-	if !ok {
-		b, ok := hs.expectBlock(cert.BlockHash)
-		if !ok {
-			log.Println("OnReceiveVote: could not find block for certificate.")
-			return
-		}
-		if b.Height <= hs.bLeaf.Height {
-			// too old, don't care。已经 这个block已经有qc了
-			// log.Println("too old block", b)
-			return
-		}
-		// need to check again in case a qc was created while we waited for the block
-		qc, ok = hs.pendingQCs[cert.BlockHash]
-		if !ok {
-			qc = data.CreateQuorumCert(b)
-			hs.pendingQCs[cert.BlockHash] = qc
-		}
-	}
-
-	err := qc.AddPartial(cert)
-	if err != nil {
-		panic(err)
-		logger.Println("OnReceiveVote: could not add partial signature to QC:", err)
-	}
-
-	if len(qc.Sigs) >= hs.Config.QuorumSize {
-		delete(hs.pendingQCs, cert.BlockHash)
-		logger.Println("OnReceiveVote: Created QC")
-		hs.UpdateQCHigh(qc)
-		hs.emitEvent(Event{Type: QCFinish, QC: qc})
-	}
-
-	// delete any pending QCs with lower height than bLeaf
-	for k := range hs.pendingQCs {
-		if b, ok := hs.Blocks.Get(k); ok {
-			if b.Height <= hs.bLeaf.Height {
-				delete(hs.pendingQCs, k)
-			}
-		} else {
-			delete(hs.pendingQCs, k)
-		}
-	}
-}
-
-// OnReceiveNewView handles the leader's response to receiving a NewView rpc from a replica
-func (hs *HotStuffCore) OnReceiveNewView(qc *data.QuorumCert) {
-	hs.mut.Lock()
-	defer hs.mut.Unlock()
-	logger.Println("OnReceiveNewView")
-	hs.emitEvent(Event{Type: ReceiveNewView, QC: qc})
-	hs.UpdateQCHigh(qc)
 }
 
 func (hs *HotStuffCore) updateAsync(ctx context.Context) {
@@ -345,8 +249,8 @@ func (hs *HotStuffCore) update(block *data.Block) {
 		return
 	}
 
-	hs.mut.Lock()
-	defer hs.mut.Unlock()
+	hs.Mut.Lock()
+	defer hs.Mut.Unlock()
 
 	logger.Println("PRE COMMIT:", block1)
 	// PRE-COMMIT on block1
@@ -394,9 +298,9 @@ func (hs *HotStuffCore) commit(block *data.Block) {
 // CreateProposal creates a new proposal
 func (hs *HotStuffCore) CreateProposal() *data.Block {
 	batch := hs.cmdCache.GetFirst(hs.Config.BatchSize)
-	hs.mut.Lock()
-	b := CreateLeaf(hs.bLeaf, batch, hs.qcHigh, hs.bLeaf.Height+1)
-	hs.mut.Unlock()
+	hs.Mut.Lock()
+	b := CreateLeaf(hs.BLeaf, batch, hs.qcHigh, hs.BLeaf.Height+1)
+	hs.Mut.Unlock()
 	b.Proposer = hs.Config.ID
 	hs.Blocks.Put(b)
 	return b

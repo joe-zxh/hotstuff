@@ -1291,7 +1291,6 @@ type QuorumSpec interface {
 type Hotstuff interface {
 	Propose(context.Context, *Block)
 	Vote(context.Context, *PartialCert)
-	NewView(context.Context, *QuorumCert)
 }
 
 func (s *GorumsServer) RegisterHotstuffServer(srv Hotstuff) {
@@ -1303,23 +1302,17 @@ func (s *GorumsServer) RegisterHotstuffServer(srv Hotstuff) {
 		req := in.message.(*PartialCert)
 		srv.Vote(ctx, req)
 	}
-	s.srv.handlers[newViewMethodID] = func(ctx context.Context, in *gorumsMessage, _ chan<- *gorumsMessage) {
-		req := in.message.(*QuorumCert)
-		srv.NewView(ctx, req)
-	}
 }
 
 const hasOrderingMethods = true
 
 const proposeMethodID int32 = 0
 const voteMethodID int32 = 1
-const newViewMethodID int32 = 2
 
 var orderingMethods = map[int32]methodInfo{
 
 	0: {requestType: new(Block).ProtoReflect(), responseType: new(empty.Empty).ProtoReflect()},
 	1: {requestType: new(PartialCert).ProtoReflect(), responseType: new(empty.Empty).ProtoReflect()},
-	2: {requestType: new(QuorumCert).ProtoReflect(), responseType: new(empty.Empty).ProtoReflect()},
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -1330,20 +1323,6 @@ func (n *Node) Vote(in *PartialCert) error {
 	metadata := &ordering.Metadata{
 		MessageID: msgID,
 		MethodID:  voteMethodID,
-	}
-	msg := &gorumsMessage{metadata: metadata, message: in}
-	n.sendQ <- msg
-	return nil
-}
-
-// Reference imports to suppress errors if they are not otherwise used.
-var _ empty.Empty
-
-func (n *Node) NewView(in *QuorumCert) error {
-	msgID := n.nextMsgID()
-	metadata := &ordering.Metadata{
-		MessageID: msgID,
-		MethodID:  newViewMethodID,
 	}
 	msg := &gorumsMessage{metadata: metadata, message: in}
 	n.sendQ <- msg

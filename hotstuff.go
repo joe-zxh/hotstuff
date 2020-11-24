@@ -34,7 +34,6 @@ func init() {
 // Pacemaker is a mechanism that provides synchronization
 type Pacemaker interface {
 	GetLeader(view int) config.ReplicaID
-	Init(*HotStuff)
 }
 
 // HotStuff is a thing
@@ -65,7 +64,6 @@ func New(conf *config.ReplicaConfig, pacemaker Pacemaker, tls bool, connectTimeo
 		connectTimeout: connectTimeout,
 		qcTimeout:      qcTimeout,
 	}
-	pacemaker.Init(hs)
 	return hs
 }
 
@@ -189,28 +187,6 @@ func (hs *HotStuff) Propose() {
 	hs.handlePropose(proposal)
 }
 
-// SendNewView sends a NEW-VIEW message to a specific replica
-func (hs *HotStuff) SendNewView(id config.ReplicaID) {
-	qc := hs.GetQCHigh()
-	if node, ok := hs.nodes[id]; ok {
-		node.NewView(proto.QuorumCertToProto(qc))
-	}
-}
-
-func (hs *HotStuff) handlePropose(block *data.Block) {
-	p, err := hs.OnReceiveProposal(block)
-	if err != nil { // todo: hotstuff只要在这个地方返回err，后续就不会再发送Vote RPC了，所以 整个算法就停了...
-		log.Println("OnReceiveProposal returned with error:", err)
-		return
-	}
-	leaderID := hs.pacemaker.GetLeader(block.Height)
-	if hs.Config.ID == leaderID {
-		hs.OnReceiveVote(p)
-	} else if leader, ok := hs.nodes[leaderID]; ok {
-		leader.Vote(proto.PartialCertToProto(p))
-	}
-}
-
 // 这个hotstuffServer是面向 集群内部的，也就是面向hotstuffServer。
 type hotstuffServer struct {
 	*HotStuff
@@ -298,6 +274,20 @@ func (hs *hotstuffServer) getClientID(ctx context.Context) (config.ReplicaID, er
 	return config.ReplicaID(id), nil
 }
 
+func (hs *HotStuff) handlePropose(block *data.Block) {
+	p, err := hs.OnReceiveProposal(block)
+	if err != nil { // todo: hotstuff只要在这个地方返回err，后续就不会再发送Vote RPC了，所以 整个算法就停了...
+		log.Println("OnReceiveProposal returned with error:", err)
+		return
+	}
+	leaderID := hs.pacemaker.GetLeader(block.Height)
+	if hs.Config.ID == leaderID {
+		hs.handleVote(p)
+	} else if leader, ok := hs.nodes[leaderID]; ok {
+		leader.Vote(proto.PartialCertToProto(p))
+	}
+}
+
 // Propose handles a replica's response to the Propose QC from the leader
 func (hs *hotstuffServer) Propose(ctx context.Context, protoB *proto.Block) {
 	block := protoB.FromProto()
@@ -311,12 +301,63 @@ func (hs *hotstuffServer) Propose(ctx context.Context, protoB *proto.Block) {
 	hs.handlePropose(block)
 }
 
-func (hs *hotstuffServer) Vote(ctx context.Context, cert *proto.PartialCert) {
-	hs.OnReceiveVote(cert.FromProto())
+// OnReceiveVote handles an incoming vote from a replica
+func (hs *HotStuff) handleVote(cert *data.PartialCert) {
+	if !hs.SigCache.VerifySignature(cert.Sig, cert.BlockHash) {
+		logger.Println("OnReceiveVote: signature not verified!")
+		return
+	}
+
+	logger.Printf("OnReceiveVote: %.8s\n", cert.BlockHash)
+
+	hs.Mut.Lock()
+	defer hs.Mut.Unlock()
+
+	qc, ok := hs.PendingQCs[cert.BlockHash]
+	if !ok {
+		b, ok := hs.ExpectBlock(cert.BlockHash)
+		if !ok {
+			log.Println("OnReceiveVote: could not find block for certificate.")
+			return
+		}
+		if b.Height <= hs.BLeaf.Height {
+			// too old, don't care。已经 这个block已经有qc了
+			// log.Println("too old block", b)
+			return
+		}
+		// need to check again in case a qc was created while we waited for the block
+		qc, ok = hs.PendingQCs[cert.BlockHash]
+		if !ok {
+			qc = data.CreateQuorumCert(b)
+			hs.PendingQCs[cert.BlockHash] = qc
+		}
+	}
+
+	err := qc.AddPartial(cert)
+	if err != nil {
+		panic(err)
+		logger.Println("OnReceiveVote: could not add partial signature to QC:", err)
+	}
+
+	if len(qc.Sigs) >= hs.Config.QuorumSize {
+		delete(hs.PendingQCs, cert.BlockHash)
+		logger.Println("OnReceiveVote: Created QC")
+		hs.UpdateQCHigh(qc)
+		go hs.Propose()
+	}
+
+	// delete any pending QCs with lower height than bLeaf
+	for k := range hs.PendingQCs {
+		if b, ok := hs.Blocks.Get(k); ok {
+			if b.Height <= hs.BLeaf.Height {
+				delete(hs.PendingQCs, k)
+			}
+		} else {
+			delete(hs.PendingQCs, k)
+		}
+	}
 }
 
-// NewView handles the leader's response to receiving a NewView rpc from a replica
-func (hs *hotstuffServer) NewView(ctx context.Context, msg *proto.QuorumCert) {
-	qc := msg.FromProto()
-	hs.OnReceiveNewView(qc)
+func (hs *hotstuffServer) Vote(ctx context.Context, cert *proto.PartialCert) {
+	hs.handleVote(cert.FromProto())
 }

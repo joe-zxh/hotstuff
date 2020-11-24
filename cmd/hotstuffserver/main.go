@@ -337,8 +337,8 @@ func newHotStuffServer(conf *options, replicaConfig *config.ReplicaConfig) *hots
 	srv.initPayloadData()
 	var pm hotstuff.Pacemaker
 	switch conf.PmType {
-	case "fixed":
-		pm = pacemaker.NewFixedLeader(conf.LeaderID)
+	//case "fixed":
+	//	pm = pacemaker.NewFixedLeader(conf.LeaderID)
 	case "round-robin":
 		pm = pacemaker.NewRoundRobin(
 			conf.ViewChange, conf.Schedule, time.Duration(conf.ViewTimeout)*time.Millisecond,
@@ -396,7 +396,12 @@ func (srv *hotstuffServer) Start(address string) error {
 	}
 
 	go srv.gorumsSrv.Serve(lis)
-	go srv.pm.Run(srv.ctx)
+	if srv.hs.Config.ID == 1 {
+		time.Sleep(3 * time.Second)
+		log.Println(`started after 3 seconds...`) // 如果链接还没建立好，那么需要加大 这个睡眠的时间。原版hotstuff里面用了一个hack来解决这个问题。
+		go srv.hs.Propose()                       // 从这里开始propose第一个消息
+	}
+	// go srv.pm.Run(srv.ctx)
 	go srv.onExec()
 
 	return nil
