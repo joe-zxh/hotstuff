@@ -179,8 +179,10 @@ func (hs *HotStuff) Close() {
 
 // Propose broadcasts a new proposal to all replicas
 func (hs *HotStuff) Propose() {
+	hs.Mut.Lock()
 	proposal := hs.CreateProposal()
 	logger.Printf("Propose (%d commands): %s\n", len(proposal.Commands), proposal)
+	hs.Mut.Unlock()
 	protobuf := proto.BlockToProto(proposal)
 	hs.cfg.Propose(protobuf) // 通过gorums的multicast不会发送消息给自己的。
 	// self-vote
@@ -277,7 +279,7 @@ func (hs *hotstuffServer) getClientID(ctx context.Context) (config.ReplicaID, er
 func (hs *HotStuff) handlePropose(block *data.Block) {
 	p, err := hs.OnReceiveProposal(block)
 	if err != nil {
-		log.Println("OnReceiveProposal returned with error:", err)
+		logger.Println("OnReceiveProposal returned with error:", err)
 		return
 	}
 	leaderID := hs.pacemaker.GetLeader(block.Height)
@@ -310,9 +312,8 @@ func (hs *HotStuff) handleVote(cert *data.PartialCert) {
 
 	logger.Printf("handleVote: %.8s\n", cert.BlockHash)
 
-	b := hs.GetBlock(cert.BlockHash)
-
 	hs.Mut.Lock()
+	b := hs.GetBlock(cert.BlockHash)
 
 	qc, ok := hs.PendingQCs[cert.BlockHash]
 	if !ok {
@@ -338,12 +339,12 @@ func (hs *HotStuff) handleVote(cert *data.PartialCert) {
 	if len(qc.Sigs) >= hs.Config.QuorumSize {
 		delete(hs.PendingQCs, cert.BlockHash)
 		logger.Printf("handleVote: Created QC: %.8s\n", qc.BlockHash)
-		hs.UpdateQCHigh(qc)
-		go hs.Propose()
+		if hs.UpdateQCHigh(qc) {
+			go hs.Propose()
+		}
 	}
 
 	hs.DeletePendings()
-
 	hs.Mut.Unlock()
 }
 
