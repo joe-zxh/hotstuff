@@ -276,7 +276,7 @@ func (hs *hotstuffServer) getClientID(ctx context.Context) (config.ReplicaID, er
 
 func (hs *HotStuff) handlePropose(block *data.Block) {
 	p, err := hs.OnReceiveProposal(block)
-	if err != nil { // todo: hotstuff只要在这个地方返回err，后续就不会再发送Vote RPC了，所以 整个算法就停了...
+	if err != nil {
 		log.Println("OnReceiveProposal returned with error:", err)
 		return
 	}
@@ -304,7 +304,7 @@ func (hs *hotstuffServer) Propose(ctx context.Context, protoB *proto.Block) {
 // OnReceiveVote handles an incoming vote from a replica
 func (hs *HotStuff) handleVote(cert *data.PartialCert) {
 	if !hs.SigCache.VerifySignature(cert.Sig, cert.BlockHash) {
-		logger.Println("OnReceiveVote: signature not verified!")
+		log.Println("OnReceiveVote: signature not verified!")
 		return
 	}
 

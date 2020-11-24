@@ -149,7 +149,7 @@ func (hs *HotStuffCore) ExpectBlock(hash data.BlockHash) (*data.Block, bool) {
 // UpdateQCHigh updates the qc held by the paceMaker, to the newest qc.
 func (hs *HotStuffCore) UpdateQCHigh(qc *data.QuorumCert) bool {
 	if !hs.SigCache.VerifyQuorumCert(qc) {
-		logger.Println("QC not verified!:", qc)
+		log.Println("QC not verified!:", qc)
 		return false
 	}
 
@@ -157,7 +157,7 @@ func (hs *HotStuffCore) UpdateQCHigh(qc *data.QuorumCert) bool {
 
 	newQCHighBlock, ok := hs.ExpectBlock(qc.BlockHash)
 	if !ok {
-		logger.Println("Could not find block of new QC!")
+		log.Println("Could not find block of new QC!")
 		return false
 	}
 
@@ -172,7 +172,7 @@ func (hs *HotStuffCore) UpdateQCHigh(qc *data.QuorumCert) bool {
 		return true
 	}
 
-	log.Println("UpdateQCHigh Failed")
+	logger.Println("UpdateQCHigh Failed")
 	return false
 }
 
@@ -180,6 +180,7 @@ func (hs *HotStuffCore) UpdateQCHigh(qc *data.QuorumCert) bool {
 func (hs *HotStuffCore) OnReceiveProposal(block *data.Block) (*data.PartialCert, error) {
 	logger.Println("OnReceiveProposal:", block)
 	hs.Blocks.Put(block)
+	hs.waitProposal.Broadcast()
 
 	hs.Mut.Lock()
 	qcBlock, nExists := hs.ExpectBlock(block.Justify.BlockHash)
@@ -219,9 +220,7 @@ func (hs *HotStuffCore) OnReceiveProposal(block *data.Block) (*data.PartialCert,
 	hs.cmdCache.MarkProposed(block.Commands...)
 	hs.Mut.Unlock()
 
-	hs.waitProposal.Broadcast()
-
-	go hs.update(block)
+	hs.pendingUpdates <- block
 
 	pc, err := hs.SigCache.CreatePartialCert(hs.Config.ID, hs.Config.PrivateKey, block)
 	if err != nil {
