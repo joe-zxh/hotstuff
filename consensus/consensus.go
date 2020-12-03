@@ -5,9 +5,9 @@ import (
 	"log"
 	"sync"
 
-	"github.com/relab/hotstuff/config"
-	"github.com/relab/hotstuff/data"
-	"github.com/relab/hotstuff/internal/logging"
+	"github.com/joe-zxh/hotstuff/config"
+	"github.com/joe-zxh/hotstuff/data"
+	"github.com/joe-zxh/hotstuff/internal/logging"
 )
 
 var logger *log.Logger

@@ -3,7 +3,7 @@ package pacemaker
 import (
 	"testing"
 
-	"github.com/relab/hotstuff/config"
+	"github.com/joe-zxh/hotstuff/config"
 )
 
 func TestRRGetLeader(t *testing.T) {

@@ -1,7 +1,7 @@
 # hotstuff
 
-![Test](https://github.com/relab/hotstuff/workflows/Test/badge.svg)
-![golangci-lint](https://github.com/relab/hotstuff/workflows/golangci-lint/badge.svg)
+![Test](https://github.com/joe-zxh/hotstuff/workflows/Test/badge.svg)
+![golangci-lint](https://github.com/joe-zxh/hotstuff/workflows/golangci-lint/badge.svg)
 
 `relab/hotstuff` is an implementation of the HotStuff protocol [1]. It uses the Gorums [2] RPC framework for sending messages between replicas.
 

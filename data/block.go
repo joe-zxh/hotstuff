@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"github.com/relab/hotstuff/config"
+	"github.com/joe-zxh/hotstuff/config"
 )
 
 // Command is the client data that is processed by HotStuff

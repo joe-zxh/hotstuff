@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/relab/hotstuff/config"
+	"github.com/joe-zxh/hotstuff/config"
 )
 
 var pk ecdsa.PrivateKey // must not be a pointer

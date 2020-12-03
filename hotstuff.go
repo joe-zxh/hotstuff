@@ -2,27 +2,20 @@ package hotstuff
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/rand"
-	"crypto/sha512"
-	"encoding/base64"
-	"encoding/binary"
 	"fmt"
+	"github.com/golang/protobuf/ptypes/empty"
 	"log"
-	"math/big"
 	"net"
-	"strconv"
 	"sync"
 	"time"
 
-	"github.com/relab/hotstuff/config"
-	"github.com/relab/hotstuff/consensus"
-	"github.com/relab/hotstuff/data"
-	"github.com/relab/hotstuff/internal/logging"
-	"github.com/relab/hotstuff/internal/proto"
+	"github.com/joe-zxh/hotstuff/config"
+	"github.com/joe-zxh/hotstuff/consensus"
+	"github.com/joe-zxh/hotstuff/data"
+	"github.com/joe-zxh/hotstuff/internal/logging"
+	"github.com/joe-zxh/hotstuff/internal/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/metadata"
 )
 
 var logger *log.Logger
@@ -39,15 +32,16 @@ type Pacemaker interface {
 // HotStuff is a thing
 type HotStuff struct {
 	*consensus.HotStuffCore
+	proto.UnimplementedHotstuffServer
+
 	tls bool
 
 	pacemaker Pacemaker
 
-	nodes map[config.ReplicaID]*proto.Node
+	nodes map[config.ReplicaID]*proto.HotstuffClient
+	conns map[config.ReplicaID]*grpc.ClientConn
 
-	server  *hotstuffServer
-	manager *proto.Manager
-	cfg     *proto.Configuration
+	server *hotstuffServer
 
 	closeOnce sync.Once
 
@@ -60,7 +54,8 @@ func New(conf *config.ReplicaConfig, pacemaker Pacemaker, tls bool, connectTimeo
 	hs := &HotStuff{
 		pacemaker:      pacemaker,
 		HotStuffCore:   consensus.New(conf),
-		nodes:          make(map[config.ReplicaID]*proto.Node),
+		nodes:          make(map[config.ReplicaID]*proto.HotstuffClient),
+		conns:          make(map[config.ReplicaID]*grpc.ClientConn),
 		connectTimeout: connectTimeout,
 		qcTimeout:      qcTimeout,
 	}
@@ -83,37 +78,7 @@ func (hs *HotStuff) Start() error {
 
 // 作为rpc的client端，调用其他hsserver的rpc。
 func (hs *HotStuff) startClient(connectTimeout time.Duration) error {
-	idMapping := make(map[string]uint32, len(hs.Config.Replicas)-1)
-	for _, replica := range hs.Config.Replicas {
-		if replica.ID != hs.Config.ID {
-			idMapping[replica.Address] = uint32(replica.ID)
-		}
-	}
 
-	// embed own ID to allow other replicas to identify messages from this replica
-	md := metadata.New(map[string]string{
-		"id": fmt.Sprintf("%d", hs.Config.ID),
-	})
-
-	perNodeMD := func(nid uint32) metadata.MD {
-		var b [4]byte
-		binary.LittleEndian.PutUint32(b[:], nid)
-		hash := sha512.Sum512(b[:])
-		R, S, err := ecdsa.Sign(rand.Reader, hs.Config.PrivateKey, hash[:])
-		if err != nil {
-			panic(fmt.Errorf("Could not sign proof for replica %d: %w", nid, err))
-		}
-		md := metadata.MD{}
-		md.Append("proof", base64.StdEncoding.EncodeToString(R.Bytes()), base64.StdEncoding.EncodeToString(S.Bytes()))
-		return md
-	}
-
-	mgrOpts := []proto.ManagerOption{
-		proto.WithDialTimeout(connectTimeout),
-		proto.WithNodeMap(idMapping),
-		proto.WithMetadata(md),
-		proto.WithPerNodeMetadata(perNodeMD),
-	}
 	grpcOpts := []grpc.DialOption{
 		grpc.WithBlock(),
 		grpc.WithReturnConnectionError(),
@@ -125,21 +90,18 @@ func (hs *HotStuff) startClient(connectTimeout time.Duration) error {
 		grpcOpts = append(grpcOpts, grpc.WithInsecure())
 	}
 
-	mgrOpts = append(mgrOpts, proto.WithGrpcDialOptions(grpcOpts...))
-
-	mgr, err := proto.NewManager(mgrOpts...)
-	if err != nil {
-		return fmt.Errorf("Failed to connect to replicas: %w", err)
-	}
-	hs.manager = mgr
-
-	for _, node := range mgr.Nodes() {
-		hs.nodes[config.ReplicaID(node.ID())] = node
-	}
-
-	hs.cfg, err = hs.manager.NewConfiguration(hs.manager.NodeIDs(), &struct{}{})
-	if err != nil {
-		return fmt.Errorf("Failed to create configuration: %w", err)
+	for rid, replica := range hs.Config.Replicas {
+		if replica.ID != hs.Config.ID {
+			conn, err := grpc.Dial(replica.Address, grpcOpts...)
+			if err != nil {
+				log.Fatalf("connect error: %v", err)
+				conn.Close()
+			} else {
+				hs.conns[rid] = conn
+				c := proto.NewHotstuffClient(conn)
+				hs.nodes[rid] = &c
+			}
+		}
 	}
 
 	return nil
@@ -152,19 +114,18 @@ func (hs *HotStuff) startServer(port string) error {
 		return fmt.Errorf("Failed to listen to port %s: %w", port, err)
 	}
 
-	serverOpts := []proto.ServerOption{}
 	grpcServerOpts := []grpc.ServerOption{}
 
 	if hs.tls {
 		grpcServerOpts = append(grpcServerOpts, grpc.Creds(credentials.NewServerTLSFromCert(hs.Config.Cert)))
 	}
 
-	serverOpts = append(serverOpts, proto.WithGRPCServerOptions(grpcServerOpts...))
+	hs.server = newHotStuffServer(hs)
 
-	hs.server = newHotStuffServer(hs, proto.NewGorumsServer(serverOpts...))
-	hs.server.RegisterHotstuffServer(hs.server)
+	s := grpc.NewServer(grpcServerOpts...)
+	proto.RegisterHotstuffServer(s, hs.server)
 
-	go hs.server.Serve(lis)
+	go s.Serve(lis)
 	return nil
 }
 
@@ -172,8 +133,9 @@ func (hs *HotStuff) startServer(port string) error {
 func (hs *HotStuff) Close() {
 	hs.closeOnce.Do(func() {
 		hs.HotStuffCore.Close()
-		hs.manager.Close()
-		hs.server.Stop()
+		for _, conn := range hs.conns { // close clients connections
+			conn.Close()
+		}
 	})
 }
 
@@ -184,96 +146,39 @@ func (hs *HotStuff) Propose() {
 	logger.Printf("Propose (%d commands): %s\n", len(proposal.Commands), proposal)
 	hs.Mut.Unlock()
 	protobuf := proto.BlockToProto(proposal)
-	hs.cfg.Propose(protobuf) // 通过gorums的multicast不会发送消息给自己的。
-	// self-vote
+
+	go func() {
+		logger.Printf("[B/Propose]: proposer id: %d\n", hs.Config.ID)
+
+		for rid, client := range hs.nodes {
+			if rid != hs.Config.ID {
+				go func(id config.ReplicaID, cli *proto.HotstuffClient) {
+					_, err := (*cli).Propose(context.TODO(), protobuf)
+					if err != nil {
+						panic(err)
+					}
+				}(rid, client)
+			}
+		}
+	}()
+
 	hs.handlePropose(proposal)
 }
 
 // 这个hotstuffServer是面向 集群内部的，也就是面向hotstuffServer。
 type hotstuffServer struct {
 	*HotStuff
-	*proto.GorumsServer
-	// maps a stream context to client info
+
 	mut     sync.RWMutex
 	clients map[context.Context]config.ReplicaID
 }
 
-func newHotStuffServer(hs *HotStuff, srv *proto.GorumsServer) *hotstuffServer {
+func newHotStuffServer(hs *HotStuff) *hotstuffServer {
 	hsSrv := &hotstuffServer{
-		HotStuff:     hs,
-		GorumsServer: srv,
-		clients:      make(map[context.Context]config.ReplicaID),
+		HotStuff: hs,
+		clients:  make(map[context.Context]config.ReplicaID),
 	}
 	return hsSrv
-}
-
-func (hs *hotstuffServer) getClientID(ctx context.Context) (config.ReplicaID, error) {
-	hs.mut.RLock()
-	// fast path for known stream
-	if id, ok := hs.clients[ctx]; ok {
-		hs.mut.RUnlock()
-		return id, nil
-	}
-
-	// 后面的部分是用来建立第一次通讯 验证用的。
-	hs.mut.RUnlock()
-	hs.mut.Lock()
-	defer hs.mut.Unlock()
-
-	// cleanup finished streams
-	for ctx := range hs.clients {
-		if ctx.Err() != nil {
-			delete(hs.clients, ctx)
-		}
-	}
-
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return 0, fmt.Errorf("getClientID: metadata not available")
-	}
-
-	v := md.Get("id")
-	if len(v) < 1 {
-		return 0, fmt.Errorf("getClientID: id field not present")
-	}
-
-	id, err := strconv.Atoi(v[0])
-	if err != nil {
-		return 0, fmt.Errorf("getClientID: cannot parse ID field: %w", err)
-	}
-
-	info, ok := hs.Config.Replicas[config.ReplicaID(id)]
-	if !ok {
-		return 0, fmt.Errorf("getClientID: could not find info about id '%d'", id)
-	}
-
-	v = md.Get("proof")
-	if len(v) < 2 {
-		return 0, fmt.Errorf("getClientID: No proof found")
-	}
-
-	var R, S big.Int
-	v0, err := base64.StdEncoding.DecodeString(v[0])
-	if err != nil {
-		return 0, fmt.Errorf("getClientID: could not decode proof: %v", err)
-	}
-	v1, err := base64.StdEncoding.DecodeString(v[1])
-	if err != nil {
-		return 0, fmt.Errorf("getClientID: could not decode proof: %v", err)
-	}
-	R.SetBytes(v0)
-	S.SetBytes(v1)
-
-	var b [4]byte
-	binary.LittleEndian.PutUint32(b[:], uint32(hs.Config.ID))
-	hash := sha512.Sum512(b[:])
-
-	if !ecdsa.Verify(info.PubKey, hash[:], &R, &S) {
-		return 0, fmt.Errorf("Invalid proof")
-	}
-
-	hs.clients[ctx] = config.ReplicaID(id)
-	return config.ReplicaID(id), nil
 }
 
 func (hs *HotStuff) handlePropose(block *data.Block) {
@@ -286,21 +191,15 @@ func (hs *HotStuff) handlePropose(block *data.Block) {
 	if hs.Config.ID == leaderID {
 		hs.handleVote(p)
 	} else if leader, ok := hs.nodes[leaderID]; ok {
-		leader.Vote(proto.PartialCertToProto(p))
+		(*leader).Vote(context.TODO(), proto.PartialCertToProto(p))
 	}
 }
 
 // Propose handles a replica's response to the Propose QC from the leader
-func (hs *hotstuffServer) Propose(ctx context.Context, protoB *proto.Block) {
+func (hs *hotstuffServer) Propose(ctx context.Context, protoB *proto.Block) (*empty.Empty, error) {
 	block := protoB.FromProto()
-	id, err := hs.getClientID(ctx)
-	if err != nil {
-		logger.Printf("Failed to get client ID: %v", err)
-		return
-	}
-	// defaults to 0 if error
-	block.Proposer = id
 	hs.handlePropose(block)
+	return &empty.Empty{}, nil
 }
 
 // handleVote handles an incoming vote from a replica
@@ -348,6 +247,7 @@ func (hs *HotStuff) handleVote(cert *data.PartialCert) {
 	hs.Mut.Unlock()
 }
 
-func (hs *hotstuffServer) Vote(ctx context.Context, cert *proto.PartialCert) {
-	hs.handleVote(cert.FromProto())
+func (hs *hotstuffServer) Vote(_ context.Context, pC *proto.PartialCert) (*empty.Empty, error) {
+	go hs.handleVote(pC.FromProto())
+	return &empty.Empty{}, nil
 }

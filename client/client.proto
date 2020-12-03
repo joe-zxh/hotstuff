@@ -6,7 +6,7 @@ import "gorums.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 
-option go_package = "github.com/relab/hotstuff/client";
+option go_package = "github.com/joe-zxh/hotstuff/client";
 
 // Client is the client-facing API to HotStuff
 service Client {

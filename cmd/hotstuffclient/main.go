@@ -18,10 +18,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joe-zxh/hotstuff/client"
+	"github.com/joe-zxh/hotstuff/config"
+	"github.com/joe-zxh/hotstuff/data"
 	"github.com/relab/gorums/benchmark"
-	"github.com/relab/hotstuff/client"
-	"github.com/relab/hotstuff/config"
-	"github.com/relab/hotstuff/data"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"

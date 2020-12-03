@@ -4,8 +4,8 @@ package proto
 import (
 	"math/big"
 
-	"github.com/relab/hotstuff/config"
-	"github.com/relab/hotstuff/data"
+	"github.com/joe-zxh/hotstuff/config"
+	"github.com/joe-zxh/hotstuff/data"
 )
 
 func PartialSigToProto(p *data.PartialSig) *PartialSig {
@@ -78,6 +78,7 @@ func BlockToProto(n *data.Block) *Block {
 		Commands:   commands,
 		QC:         QuorumCertToProto(n.Justify),
 		Height:     int64(n.Height),
+		ProposerID: uint32(n.Proposer),
 	}
 }
 
@@ -90,6 +91,7 @@ func (pn *Block) FromProto() *data.Block {
 		Justify:  pn.GetQC().FromProto(),
 		Height:   int(pn.Height),
 		Commands: commands,
+		Proposer: config.ReplicaID(pn.ProposerID),
 	}
 	copy(n.ParentHash[:], pn.GetParentHash())
 	return n
