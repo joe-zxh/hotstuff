@@ -149,7 +149,7 @@ func (hs *HotStuff) Propose() {
 		}
 
 		if hs.IsVCExp && hs.ViewChangeCount >= hs.ViewChangeMyTotal {
-			log.Printf("view change average time: %vms\n", float64(time.Since(hs.VCStart).Milliseconds())/float64(hs.server.ClusterSize*hs.ViewChangeMyTotal))
+			log.Printf("\nview change total: %d, average time: %v ms\n", hs.ViewChangeMyTotal*hs.ClusterSize, float64(time.Since(hs.VCStart).Milliseconds())/float64(hs.server.ClusterSize*hs.ViewChangeMyTotal))
 
 			<-hs.ViewChangeChan //不再执行了停止了...
 		}
