@@ -95,6 +95,8 @@ func main() {
 	pflag.String("client-listen", "", "Override the listen address for the client server")
 	pflag.String("peer-listen", "", "Override the listen address for the replica (peer) server")
 	clusterSize := pflag.Int("cluster-size", 4, "specify the size of the cluster")
+	isVCExp := pflag.Bool("vcexp", false, "conducting the view change experiment")
+	vcTimes := pflag.Uint32("vctimes", 100, "view change times for vc experiment")
 	pflag.Parse()
 
 	if *help {
@@ -216,6 +218,8 @@ func main() {
 
 	replicaConfig := config.NewConfig(conf.SelfID, privkey, cert)
 	replicaConfig.BatchSize = conf.BatchSize
+	replicaConfig.IsVCExp = *isVCExp
+	replicaConfig.VCTimes = *vcTimes
 
 	if *clusterSize > len(conf.Replicas) {
 		panic("cluster size too large, you do not have enough replica configuration in the toml file")

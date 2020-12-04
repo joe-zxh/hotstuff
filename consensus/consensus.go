@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/joe-zxh/hotstuff/config"
 	"github.com/joe-zxh/hotstuff/data"
@@ -47,6 +48,14 @@ type HotStuffCore struct {
 	waitProposal *sync.Cond // 这里的条件变量可以借鉴一下
 
 	exec chan []data.Command
+
+	// view change experiment
+	ClusterSize       uint32
+	ViewChangeChan    chan struct{}
+	IsVCExp           bool
+	ViewChangeMyTotal uint32
+	ViewChangeCount   uint32
+	VCStart           time.Time
 }
 
 func (hs *HotStuffCore) AddCommand(command data.Command) {
@@ -109,6 +118,11 @@ func New(conf *config.ReplicaConfig) *HotStuffCore {
 		SigCache:   data.NewSignatureCache(conf),
 		cmdCache:   data.NewCommandSet(),
 		exec:       make(chan []data.Command, 1),
+
+		ClusterSize:       uint32(conf.ClusterSize),
+		ViewChangeChan:    make(chan struct{}, 1),
+		IsVCExp:           conf.IsVCExp,
+		ViewChangeMyTotal: conf.VCTimes / uint32(conf.ClusterSize),
 	}
 
 	hs.waitProposal = sync.NewCond(&hs.Mut)

@@ -26,6 +26,9 @@ type ReplicaConfig struct {
 	QuorumSize  int
 	ClusterSize int
 	BatchSize   int
+
+	IsVCExp bool
+	VCTimes uint32
 }
 
 // NewConfig returns a new ReplicaConfig instance

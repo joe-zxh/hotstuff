@@ -142,6 +142,20 @@ func (hs *HotStuff) Close() {
 // Propose broadcasts a new proposal to all replicas
 func (hs *HotStuff) Propose() {
 	hs.Mut.Lock()
+
+	if hs.IsVCExp {
+		if hs.ViewChangeCount == 0 {
+			hs.VCStart = time.Now()
+		}
+
+		if hs.IsVCExp && hs.ViewChangeCount >= hs.ViewChangeMyTotal {
+			log.Printf("view change average time: %vms\n", float64(time.Since(hs.VCStart).Milliseconds())/float64(hs.server.ClusterSize*hs.ViewChangeMyTotal))
+
+			<-hs.ViewChangeChan //不再执行了停止了...
+		}
+		hs.ViewChangeCount++
+	}
+
 	proposal := hs.CreateProposal()
 	logger.Printf("Propose (%d commands): %s\n", len(proposal.Commands), proposal)
 	hs.Mut.Unlock()
