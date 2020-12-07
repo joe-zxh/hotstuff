@@ -4,7 +4,11 @@ profileMem/
 
 # Binaries for programs and plugins
 hotstuffclient
+!hotstuffclient/
+hotstuffvcclient
+!hotstuffvcclient/
 hotstuffserver
+!hotstuffserver/
 *.exe
 *.exe~
 *.dll
